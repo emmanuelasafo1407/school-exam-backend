@@ -2,16 +2,15 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens; // 👈 1. Import Sanctum tokens trait
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    // 👈 2. Use HasApiTokens trait here so authentication functions work
+    use HasApiTokens, HasFactory, Notifiable; 
 
     /**
      * The attributes that are mass assignable.
@@ -19,9 +18,11 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
+        'full_name',     // Matches your form input
         'email',
+        'phone_number',  // Matches your form input
         'password',
+        'role',          // Matches your student assignment logic
     ];
 
     /**
@@ -45,5 +46,11 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    // Connects a user record directly to their student profile metadata table
+    public function studentProfile()
+    {
+        return $this->hasOne(StudentProfile::class);
     }
 }

@@ -13,6 +13,18 @@ return new class extends Migration
     {
         Schema::create('student_profiles', function (Blueprint $table) {
             $table->id();
+            // Connects the profile directly to a user record. If the user is deleted, their profile is deleted automatically.
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            
+            $table->string('student_id_number')->unique();
+            $table->string('faculty');
+            $table->string('department');
+            $table->string('program');
+            $table->string('level');
+            
+            // Stores the directory location path of the uploaded student photo
+            $table->string('passport_picture')->nullable(); 
+            
             $table->timestamps();
         });
     }
