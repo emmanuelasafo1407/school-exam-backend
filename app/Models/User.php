@@ -5,11 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens; // 👈 1. Import Sanctum tokens trait
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    // 👈 2. Use HasApiTokens trait here so authentication functions work
     use HasApiTokens, HasFactory, Notifiable; 
 
     /**
@@ -18,11 +17,12 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'full_name',     // Matches your form input
+        'full_name',
         'email',
-        'phone_number',  // Matches your form input
+        'phone_number',
         'password',
-        'role',          // Matches your student assignment logic
+        'role',
+        'signature_image', // 👈 FIXED: Added here to allow invigilator signatures to save properly!
     ];
 
     /**
@@ -48,7 +48,9 @@ class User extends Authenticatable
         ];
     }
 
-    // Connects a user record directly to their student profile metadata table
+    /**
+     * Connects a user record directly to their student profile metadata table.
+     */
     public function studentProfile()
     {
         return $this->hasOne(StudentProfile::class);

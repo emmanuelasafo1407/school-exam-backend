@@ -6,9 +6,12 @@ use App\Http\Controllers\API\AuthController;
 
 // Your live registration endpoint for the Infinix phone
 Route::post('/register/student', [AuthController::class, 'registerStudent']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'loginUser']);
 Route::post('/register/invigilator', [AuthController::class, 'registerInvigilator']);
 Route::get('/student/verify/{student_id}', [AuthController::class, 'getStudentVerifyProfile']);
+Route::post('/attendance/log', [AuthController::class, 'logStudentAttendance']);
+Route::get('/attendance/analytics/{course_code}', [AuthController::class, 'getCourseSessionAnalytics']);
+Route::get('/attendance/ledger/{course_code}', [AuthController::class, 'getCourseDetailedLedger']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

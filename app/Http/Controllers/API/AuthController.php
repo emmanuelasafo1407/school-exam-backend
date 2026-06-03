@@ -5,7 +5,8 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\StudentProfile;
-use App\Models\EligibleStudent; // 👈 Imported for checking eligibility
+use App\Models\EligibleStudent; 
+use App\Models\Attendance; // 👈 Ensure this is imported here
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -24,11 +25,12 @@ class AuthController extends Controller
             'department' => 'required|string',
             'program' => 'required|string',
             'level' => 'required|string',
+            'session' => 'required|string', // Morning, Evening, Weekend
             'password' => 'required|string|min:6',
             'passport_picture' => 'nullable|string', 
         ]);
 
-        // 1. Guard Check: Is this student ID registered on the Admin's master eligibility list?
+        // Guard Check: Is this student ID registered on the Admin's master eligibility list?
         $eligible = EligibleStudent::where('student_id_number', $request->student_id_number)->first();
 
         if (!$eligible) {
@@ -61,6 +63,7 @@ class AuthController extends Controller
                 $imagePath = 'storage/passports/' . $fileName;
             }
 
+            // This resolves perfectly now because 'session' is registered in the model's fillable array!
             StudentProfile::create([
                 'user_id' => $user->id,
                 'student_id_number' => $request->student_id_number,
@@ -68,13 +71,14 @@ class AuthController extends Controller
                 'department' => $request->department,
                 'program' => $request->program,
                 'level' => $request->level,
+                'session' => $request->input('session'),
                 'passport_picture' => $imagePath,
             ]);
 
-            // 2. Update the master eligibility list flag to track that onboarding is complete
+            // Update the master eligibility list flag to track that onboarding is complete
             $eligible->update(['has_registered' => true]);
 
-            DB::commit();
+            DB::commit(); // 👈 FIXED: Clean single commit line
 
             return response()->json([
                 'status' => 'success',
@@ -90,8 +94,8 @@ class AuthController extends Controller
         }
     }
 
-    // 👈 NEW: Secure Multi-Role Login Endpoint
-    public function login(Request $request)
+    // 👈 FIXED METHOD NAME: Renamed from 'login' to 'loginUser' to match Flutter's ApiClient!
+    public function loginUser(Request $request)
     {
         $request->validate([
             'email' => 'required|string|email',
@@ -133,13 +137,13 @@ class AuthController extends Controller
                 'department' => $user->studentProfile->department,
                 'program' => $user->studentProfile->program,
                 'level' => $user->studentProfile->level,
-                // 👈 UPDATED: Generate a clean, bulletproof public asset link
                 'passport_picture' => $user->studentProfile->passport_picture ? asset($user->studentProfile->passport_picture) : null,
             ];
         }
 
         return response()->json($responseData, 200);
     }
+
     public function registerInvigilator(Request $request)
     {
         $request->validate([
@@ -147,21 +151,40 @@ class AuthController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'phone_number' => 'nullable|string',
             'password' => 'required|string|min:6',
+            'signature_image' => 'nullable|string', // Expects sanitized Base64 canvas data stream string
         ]);
 
         try {
+            $imagePath = null;
+
+            // Process and extract Base64 signature canvas data stream strings if present
+            if ($request->filled('signature_image')) {
+                $imageData = $request->signature_image;
+                if (preg_match('/^data:image\/(\w+);base64,/', $imageData, $type)) {
+                    $imageData = substr($imageData, strpos($imageData, ',') + 1);
+                }
+                $imageData = base64_decode($imageData);
+                
+                // Save signature image securely with a clean, descriptive naming structure
+                $fileName = 'sig_' . time() . '_' . uniqid() . '.png';
+                Storage::disk('public')->put('signatures/' . $fileName, $imageData);
+                $imagePath = 'storage/signatures/' . $fileName;
+            }
+
             User::create([
                 'full_name' => $request->full_name,
                 'email' => $request->email,
                 'phone_number' => $request->phone_number,
                 'password' => Hash::make($request->password),
-                'role' => 'invigilator', // Explicitly marked as supervisor tier
+                'role' => 'invigilator',
+                'signature_image' => $imagePath, // Binds server local path asset URL index pointer
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Invigilator account generated successfully!'
+                'message' => 'Invigilator account generated successfully with signature profile!'
             ], 201);
+            
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -169,7 +192,7 @@ class AuthController extends Controller
             ], 500);
         }
     }
-    // 👈 NEW: Fetch a student's verification profile using their scanned ID number
+
     public function getStudentVerifyProfile($student_id)
     {
         $profile = StudentProfile::where('student_id_number', $student_id)->first();
@@ -181,7 +204,6 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // Fetch user account details associated with this profile record
         $user = $profile->user;
 
         return response()->json([
@@ -195,6 +217,132 @@ class AuthController extends Controller
                 'level' => $profile->level,
                 'passport_picture' => $profile->passport_picture ? asset($profile->passport_picture) : null,
             ]
+        ], 200);
+    }
+
+    public function logStudentAttendance(Request $request)
+    {
+        $request->validate([
+            'student_id_number' => 'required|string',
+            'course_code' => 'required|string',
+            'course_name' => 'required|string',
+            'hall' => 'required|string',
+            'invigilator_id' => 'required|integer',
+        ]);
+
+        $alreadyMarked = Attendance::where('student_id_number', $request->student_id_number)
+                                   ->where('course_code', $request->course_code)
+                                   ->first();
+
+        if ($alreadyMarked) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This student has already been checked into this exam hall session!'
+            ], 409);
+        }
+
+        try {
+            $attendance = Attendance::create([
+                'student_id_number' => $request->student_id_number,
+                'course_code' => $request->course_code,
+                'course_name' => $request->course_name,
+                'hall' => $request->hall,
+                'invigilator_id' => $request->invigilator_id,
+                'verified_at' => now(), 
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Student attendance logged successfully to database records!'
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Database logging failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getCourseSessionAnalytics($course_code)
+    {
+        // 👈 FIXED: Removed absolute backslashes. Simplifies code using top imports!
+        $totalEligibleCount = EligibleStudent::count();
+
+        $presentCount = Attendance::where('course_code', $course_code)->count();
+
+        $absentCount = max(0, $totalEligibleCount - $presentCount);
+
+        $attendanceRate = $totalEligibleCount > 0 ? round(($presentCount / $totalEligibleCount) * 100, 1) : 0;
+
+        return response()->json([
+            'status' => 'success',
+            'summary' => [
+                'course_code' => $course_code,
+                'total_allocated' => $totalEligibleCount,
+                'total_present' => $presentCount,
+                'total_absent' => $absentCount,
+                'attendance_rate_percentage' => $attendanceRate,
+            ],
+            'chart_dataset' => [
+                ['label' => 'Present', 'value' => $presentCount],
+                ['label' => 'Absent', 'value' => $absentCount],
+            ]
+        ], 200);
+    }
+    // 👈 NEW: Fetch a complete list of students with attendance status for PDF compilation
+    public function getCourseDetailedLedger($course_code)
+    {
+        $allEligible = EligibleStudent::all();
+        
+        $checkedIn = Attendance::where('course_code', $course_code)
+                               ->get()
+                               ->keyBy('student_id_number');
+
+        $firstLog = Attendance::where('course_code', $course_code)->first();
+        $invigilatorName = 'N/A';
+        $signatureUrl = null;
+
+        if ($firstLog) {
+            $supervisor = User::find($firstLog->invigilator_id);
+            if ($supervisor) {
+                $invigilatorName = $supervisor->full_name;
+                $signatureUrl = $supervisor->signature_image ? asset($supervisor->signature_image) : null;
+            }
+        }
+
+        // 👈 FIXED: We pull the sessions map ahead of time into a flat key-value array to bypass protected visibility checks
+        $sessionsMap = StudentProfile::pluck('session', 'student_id_number')->toArray();
+
+        $ledgerData = [];
+        foreach ($allEligible as $student) {
+            $hasPresent = $checkedIn->has($student->student_id_number);
+            
+            // Extract the string value from our flat local sessions array map safely
+            $sessionShift = array_key_exists($student->student_id_number, $sessionsMap) 
+                ? $sessionsMap[$student->student_id_number] 
+                : 'Morning';
+
+            $ledgerData[] = [
+                'index_number' => $student->student_id_number,
+                'student_name' => $student->student_name,
+                'session' => $sessionShift,
+                'time_logged' => $hasPresent ? $checkedIn[$student->student_id_number]->verified_at->format('h:i:s A') : 'N/A',
+                'status' => $hasPresent ? 'PRESENT' : 'ABSENT',
+            ];
+        }
+
+        usort($ledgerData, function ($a, $b) {
+            return strcmp($a['student_name'], $b['student_name']);
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'date_generated' => now()->format('l, F d, Y'),
+            'total_records' => count($ledgerData),
+            'invigilator_name' => $invigilatorName,
+            'signature_picture' => $signatureUrl,
+            'records' => $ledgerData
         ], 200);
     }
 }
