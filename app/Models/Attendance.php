@@ -12,6 +12,10 @@ class Attendance extends Model
         'course_code',
         'course_name',
         'hall',
+        'lecturer_name', 
+        'start_time',
+        'end_time',
+        'paper_code',
         'invigilator_id',
         'verified_at'
     ];
@@ -21,5 +25,8 @@ class Attendance extends Model
      */
     protected $casts = [
         'verified_at' => 'datetime',
+        'start_time' => 'datetime',
+        'end_time' => 'datetime',
+        'paper_code' => 'string',
     ];
 }
