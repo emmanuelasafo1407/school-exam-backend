@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('eligible_students', function (Blueprint $table) {
             $table->id();
             $table->string('student_id_number')->unique();
-            $table->string('full_name');
+            $table->string('student_name');
             $table->string('level');
             $table->string('semester'); // e.g., "Sem 1 2026"
             $table->boolean('has_registered')->default(false); // Keeps track of who completed onboarding

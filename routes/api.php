@@ -16,3 +16,9 @@ Route::get('/attendance/ledger/{course_code}', [AuthController::class, 'getCours
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+Route::middleware('auth:sanctum')->group(function () {
+    // Secure token destruction lane
+    Route::post('/logout', [AuthController::class, 'logoutUser']);
+    
+    // Your existing active attendance and ledger routes sit down here...
+});

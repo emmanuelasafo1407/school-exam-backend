@@ -29,7 +29,7 @@ class AuthController extends Controller
             'password' => 'required|string|min:6',
             'passport_picture' => 'nullable|string', 
         ]);
-
+        /*👈 COMMENTED OUT FOR DEV TESTING: Ignore eligibility check for now
         // Guard Check: Is this student ID registered on the Admin's master eligibility list?
         $eligible = EligibleStudent::where('student_id_number', $request->student_id_number)->first();
 
@@ -38,7 +38,7 @@ class AuthController extends Controller
                 'status' => 'error',
                 'message' => 'Registration blocked: Your student ID is not listed on the official semester eligibility list. Contact Admin.'
             ], 403);
-        }
+        }*/
 
         DB::beginTransaction();
 
@@ -76,7 +76,7 @@ class AuthController extends Controller
             ]);
 
             // Update the master eligibility list flag to track that onboarding is complete
-            $eligible->update(['has_registered' => true]);
+            //$eligible->update(['has_registered' => true]);
 
             DB::commit(); // 👈 FIXED: Clean single commit line
 
@@ -264,22 +264,18 @@ class AuthController extends Controller
         }
     }
 
-    public function getCourseSessionAnalytics($course_code)
+   public function getCourseSessionAnalytics($course_code)
     {
-        // 👈 FIXED: Removed absolute backslashes. Simplifies code using top imports!
-        $totalEligibleCount = EligibleStudent::count();
-
+        $totalRegisteredCount = StudentProfile::count(); // 👈 Use profile counts for dev testing
         $presentCount = Attendance::where('course_code', $course_code)->count();
-
-        $absentCount = max(0, $totalEligibleCount - $presentCount);
-
-        $attendanceRate = $totalEligibleCount > 0 ? round(($presentCount / $totalEligibleCount) * 100, 1) : 0;
+        $absentCount = max(0, $totalRegisteredCount - $presentCount);
+        $attendanceRate = $totalRegisteredCount > 0 ? round(($presentCount / $totalRegisteredCount) * 100, 1) : 0;
 
         return response()->json([
             'status' => 'success',
             'summary' => [
                 'course_code' => $course_code,
-                'total_allocated' => $totalEligibleCount,
+                'total_allocated' => $totalRegisteredCount,
                 'total_present' => $presentCount,
                 'total_absent' => $absentCount,
                 'attendance_rate_percentage' => $attendanceRate,
@@ -293,13 +289,10 @@ class AuthController extends Controller
     // 👈 NEW: Fetch a complete list of students with attendance status for PDF compilation
     public function getCourseDetailedLedger($course_code)
     {
-        $allEligible = EligibleStudent::all();
+        // 1. Fetch actual attendance logs for this specific course session
+        $recordsLogged = Attendance::where('course_code', $course_code)->get();
         
-        $checkedIn = Attendance::where('course_code', $course_code)
-                               ->get()
-                               ->keyBy('student_id_number');
-
-        $firstLog = Attendance::where('course_code', $course_code)->first();
+        $firstLog = $recordsLogged->first();
         $invigilatorName = 'N/A';
         $signatureUrl = null;
 
@@ -311,27 +304,28 @@ class AuthController extends Controller
             }
         }
 
-        // 👈 FIXED: We pull the sessions map ahead of time into a flat key-value array to bypass protected visibility checks
-        $sessionsMap = StudentProfile::pluck('session', 'student_id_number')->toArray();
+        // 2. Map student profiles directly to fetch names and registration sessions
+        $studentIds = $recordsLogged->pluck('student_id_number')->toArray();
+        $profilesMap = StudentProfile::whereIn('student_id_number', $studentIds)->get()->keyBy('student_id_number');
 
         $ledgerData = [];
-        foreach ($allEligible as $student) {
-            $hasPresent = $checkedIn->has($student->student_id_number);
+        foreach ($recordsLogged as $log) {
+            $profile = $profilesMap->get($log->student_id_number);
             
-            // Extract the string value from our flat local sessions array map safely
-            $sessionShift = array_key_exists($student->student_id_number, $sessionsMap) 
-                ? $sessionsMap[$student->student_id_number] 
-                : 'Morning';
+            // Fallback gracefully if profile relation index isn't found during testing
+            $studentName = $profile && $profile->user ? $profile->user->full_name : 'Test Student Name';
+            $sessionShift = $profile ? $profile->session : 'Morning';
 
             $ledgerData[] = [
-                'index_number' => $student->student_id_number,
-                'student_name' => $student->student_name,
+                'index_number' => $log->student_id_number,
+                'student_name' => $studentName,
                 'session' => $sessionShift,
-                'time_logged' => $hasPresent ? $checkedIn[$student->student_id_number]->verified_at->format('h:i:s A') : 'N/A',
-                'status' => $hasPresent ? 'PRESENT' : 'ABSENT',
+                'time_logged' => $log->verified_at ? \Carbon\Carbon::parse($log->verified_at)->format('h:i:s A') : 'N/A',
+                'status' => 'PRESENT',
             ];
         }
 
+        // Sort rows alphabetically by student name
         usort($ledgerData, function ($a, $b) {
             return strcmp($a['student_name'], $b['student_name']);
         });

@@ -3,23 +3,25 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * Seed the application's database.
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
+        // 1. Create default test account using the correct 'full_name' column attributes safely
         User::factory()->create([
-            'name' => 'Test User',
+            'full_name' => 'Test Admin/Invigilator',
             'email' => 'test@example.com',
+            'role' => 'invigilator',
+        ]);
+
+        // 2. 👈 Trigger your custom student eligibility checklist dataset loader live!
+        $this->call([
+            EligibleStudentsSeeder::class,
         ]);
     }
 }
