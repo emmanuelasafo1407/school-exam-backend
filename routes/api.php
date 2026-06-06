@@ -12,6 +12,11 @@ Route::get('/student/verify/{student_id}', [AuthController::class, 'getStudentVe
 Route::post('/attendance/log', [AuthController::class, 'logStudentAttendance']);
 Route::get('/attendance/analytics/{course_code}', [AuthController::class, 'getCourseSessionAnalytics']);
 Route::get('/attendance/ledger/{course_code}', [AuthController::class, 'getCourseDetailedLedger']);
+// Ensure this path matches exactly what the ApiClient is calling:
+Route::get('/student-profile/{student_id}', [App\Http\Controllers\API\AuthController::class, 'getStudentVerifyProfile']);
+// 👈 FIX: Ensure the route uri is exactly 'log-attendance' to match your ApiClient
+Route::post('/log-attendance', [App\Http\Controllers\API\AuthController::class, 'logStudentAttendance']);
+Route::post('/submit-paper', [App\Http\Controllers\API\AuthController::class, 'submitExamPaper']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

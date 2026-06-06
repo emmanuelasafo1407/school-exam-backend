@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -178,7 +179,7 @@ class AuthController extends Controller
         if (!$profile) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Access Denied: Student ID is not registered in the system.'
+                'message' => 'Access Denied: Student ID is not registered in the database.'
             ], 404);
         }
 
@@ -187,18 +188,18 @@ class AuthController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => [
-                'name' => $user->full_name,
+                'name' => $user->full_name ?? 'N/A',
                 'student_id_number' => $profile->student_id_number,
-                'faculty' => $profile->faculty,
-                'department' => $profile->department,
-                'program' => $profile->program,
-                'level' => $profile->level,
-                'passport_picture' => $profile->passport_picture ? asset($profile->passport_picture) : null,
+                'faculty' => $profile->faculty ?? 'N/A',
+                'department' => $profile->department ?? 'N/A',
+                'program' => $profile->program ?? 'N/A',
+                'level' => $profile->level ?? 'N/A',
+                'session' => $profile->session ?? 'Morning',
+                'passport_picture' => $profile->passport_picture ? asset($profile->passport_picture) : null, // 👈 FIXED URL FOR SCANNER SCREEN LOOKUPS
             ]
         ], 200);
     }
 
-    // 👈 LOG ATTENDANCE METHOD (ONLY ONE CLEAN DEFINITION EXISTENT NOW)
     public function logStudentAttendance(Request $request)
     {
         $request->validate([
@@ -280,12 +281,13 @@ class AuthController extends Controller
         ], 200);
     }
 
+    // 👈 FIXED LEDGER SYNCHRONIZER METHOD: Maps out all fields for full frontend and PDF rendering
     public function getCourseDetailedLedger($course_code)
     {
         $recordsLogged = Attendance::where('course_code', $course_code)->get();
         
         $firstLog = $recordsLogged->first();
-        $invigilatorName = 'N/A';
+        $invigilatorName = 'Akpor Norsor';
         $signatureUrl = null;
 
         if ($firstLog) {
@@ -306,12 +308,15 @@ class AuthController extends Controller
             $studentName = $profile && $profile->user ? $profile->user->full_name : 'Test Student';
             $sessionShift = $profile ? $profile->session : 'Morning';
 
+            // 👈 CRITICAL FIX: Explicitly bundle submission statuses, formatting dynamic carbon timestamps safely
             $ledgerData[] = [
                 'index_number' => $log->student_id_number,
                 'student_name' => $studentName,
                 'session' => $sessionShift,
                 'paper_code' => $log->paper_code ?? 'N/A',
-                'time_logged' => $log->verified_at ? \Carbon\Carbon::parse($log->verified_at)->format('h:i:s A') : 'N/A',
+                'time_logged' => $log->verified_at ? Carbon::parse($log->verified_at)->format('h:i:s A') : 'N/A',
+                'paper_submitted' => (bool)$log->paper_submitted, // Returns clean boolean true/false to Flutter
+                'time_submitted' => $log->time_submitted ? Carbon::parse($log->time_submitted)->format('h:i:s A') : 'PENDING', // Returns clean timestamp string to Flutter
                 'status' => 'PRESENT',
             ];
         }
@@ -338,6 +343,35 @@ class AuthController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Token session terminated successfully.'
+        ], 200);
+    }
+
+    public function submitExamPaper(Request $request)
+    {
+        $request->validate([
+            'student_id_number' => 'required',
+            'course_code' => 'required'
+        ]);
+
+        $attendance = Attendance::where('student_id_number', $request->student_id_number)
+            ->where('course_code', $request->course_code)
+            ->first();
+
+        if (!$attendance) {
+            return response()->json(['message' => 'Record not found.'], 404);
+        }
+
+        $currentTime = now();
+
+        $attendance->update([
+            'paper_submitted' => true,
+            'time_submitted' => $currentTime
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Exam script submission logged successfully.',
+            'time_submitted' => $currentTime->format('h:i:s A') // 👈 CLEAN PRE-FORMATTED STRING PREVENTS FLUTTER UI CRASHES
         ], 200);
     }
 }
