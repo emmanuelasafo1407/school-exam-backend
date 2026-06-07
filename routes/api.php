@@ -17,6 +17,7 @@ Route::get('/student-profile/{student_id}', [App\Http\Controllers\API\AuthContro
 // 👈 FIX: Ensure the route uri is exactly 'log-attendance' to match your ApiClient
 Route::post('/log-attendance', [App\Http\Controllers\API\AuthController::class, 'logStudentAttendance']);
 Route::post('/submit-paper', [App\Http\Controllers\API\AuthController::class, 'submitExamPaper']);
+Route::get('/admin/stats', [App\Http\Controllers\API\DashboardController::class, 'getStats']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
