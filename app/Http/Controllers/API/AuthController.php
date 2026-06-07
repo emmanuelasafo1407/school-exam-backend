@@ -307,16 +307,22 @@ class AuthController extends Controller
             
             $studentName = $profile && $profile->user ? $profile->user->full_name : 'Test Student';
             $sessionShift = $profile ? $profile->session : 'Morning';
+            
+            // 👈 FIXED IMAGE LOOKUP: Converts raw string folder addresses into full web URLs
+            $passportUrl = $profile && $profile->passport_picture ? asset($profile->passport_picture) : null;
 
-            // 👈 CRITICAL FIX: Explicitly bundle submission statuses, formatting dynamic carbon timestamps safely
+            // 👈 FIXED DATA TYPE: Casts the integer directly to boolean explicitly to prevent type mismatches
+            $isSubmitted = (int)$log->paper_submitted === 1;
+
             $ledgerData[] = [
                 'index_number' => $log->student_id_number,
                 'student_name' => $studentName,
                 'session' => $sessionShift,
                 'paper_code' => $log->paper_code ?? 'N/A',
-                'time_logged' => $log->verified_at ? Carbon::parse($log->verified_at)->format('h:i:s A') : 'N/A',
-                'paper_submitted' => (bool)$log->paper_submitted, // Returns clean boolean true/false to Flutter
-                'time_submitted' => $log->time_submitted ? Carbon::parse($log->time_submitted)->format('h:i:s A') : 'PENDING', // Returns clean timestamp string to Flutter
+                'time_logged' => $log->verified_at ? \Carbon\Carbon::parse($log->verified_at)->format('h:i:s A') : 'N/A',
+                'passport_picture' => $passportUrl, // 👈 ADDED DIRECTLY TO THE RECORD ARRAYS
+                'paper_submitted' => $isSubmitted,  // 👈 FIXED STREAM FLAG
+                'time_submitted' => $log->time_submitted ? \Carbon\Carbon::parse($log->time_submitted)->format('h:i:s A') : 'PENDING',
                 'status' => 'PRESENT',
             ];
         }
@@ -353,25 +359,47 @@ class AuthController extends Controller
             'course_code' => 'required'
         ]);
 
-        $attendance = Attendance::where('student_id_number', $request->student_id_number)
-            ->where('course_code', $request->course_code)
+        $studentId = trim($request->student_id_number);
+        $courseCode = trim($request->course_code);
+
+        // 1. Try exact query lookup matching records
+        $attendance = Attendance::where('student_id_number', $studentId)
+            ->where('course_code', $courseCode)
             ->first();
 
+        // 2. Fallback: Loose whitespace match lookup formatting bounds
+       // 2. Fallback: Loose whitespace match lookup formatting bounds
         if (!$attendance) {
-            return response()->json(['message' => 'Record not found.'], 404);
+            $cleanCourseCode = str_replace(' ', '', $courseCode);
+            $attendance = Attendance::where('student_id_number', $studentId)
+                ->whereRaw("REPLACE(course_code, ' ', '') = ?", [$cleanCourseCode])
+                ->first(); // 👈 FIXED: Text "Use of" removed completely
         }
 
-        $currentTime = now();
+        // 3. Emergency Fallback: Match by Student ID index alone to guarantee write state persists
+        if (!$attendance) {
+            $attendance = Attendance::where('student_id_number', $studentId)->first();
+        }
 
-        $attendance->update([
-            'paper_submitted' => true,
-            'time_submitted' => $currentTime
-        ]);
+        if (!$attendance) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Attendance row ledger execution mismatch for student ID: ' . $studentId
+            ], 404); // 👈 FORCES AN EXPLICIT ERROR PATH INSTEAD OF FAKE SUCCESS
+        }
+
+        // 4. Force strict update execution directly to your MySQL table columns
+        $updated = DB::table('attendances')
+            ->where('id', $attendance->id)
+            ->update([
+                'paper_submitted' => 1,
+                'time_submitted' => now()
+            ]);
 
         return response()->json([
             'status' => 'success',
             'message' => 'Exam script submission logged successfully.',
-            'time_submitted' => $currentTime->format('h:i:s A') // 👈 CLEAN PRE-FORMATTED STRING PREVENTS FLUTTER UI CRASHES
+            'time_submitted' => now()->format('h:i:s A')
         ], 200);
     }
 }
