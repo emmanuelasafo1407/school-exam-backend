@@ -22,7 +22,11 @@ class User extends Authenticatable
         'phone_number',
         'password',
         'role',
-        'signature_image', // 👈 FIXED: Added here to allow invigilator signatures to save properly!
+        'signature_image',
+        // --- NEW FIELDS ADDED HERE ---
+        'is_qualified',
+        'is_verified',
+        'assigned_hall',
     ];
 
     /**
@@ -45,6 +49,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // --- ADD CASTS FOR BOOTLEANS ---
+            'is_qualified' => 'boolean',
+            'is_verified' => 'boolean',
         ];
     }
 

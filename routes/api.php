@@ -18,6 +18,23 @@ Route::get('/student-profile/{student_id}', [App\Http\Controllers\API\AuthContro
 Route::post('/log-attendance', [App\Http\Controllers\API\AuthController::class, 'logStudentAttendance']);
 Route::post('/submit-paper', [App\Http\Controllers\API\AuthController::class, 'submitExamPaper']);
 Route::get('/admin/stats', [App\Http\Controllers\API\DashboardController::class, 'getStats']);
+Route::post('/admin/import-students', [App\Http\Controllers\API\Admin\StudentImportController::class, 'importCsv']);
+Route::prefix('admin')->group(function () {
+    Route::get('/users', [App\Http\Controllers\API\Admin\UserController::class, 'index']);
+    Route::patch('/users/{id}/status', [App\Http\Controllers\API\Admin\UserController::class, 'updateStatus']);
+});
+Route::prefix('admin')->group(function () {
+    // ... existing routes
+    Route::get('/sessions', [App\Http\Controllers\API\Admin\ExamSessionController::class, 'index']);
+    Route::post('/sessions', [App\Http\Controllers\API\Admin\ExamSessionController::class, 'store']);
+    Route::patch('/sessions/{id}/toggle', [App\Http\Controllers\API\Admin\ExamSessionController::class, 'toggleStatus']);
+});
+Route::prefix('admin')->group(function () {
+    Route::get('/invigilators/pending', [App\Http\Controllers\API\Admin\InvigilatorController::class, 'index']);
+    Route::patch('/invigilators/{id}/verify', [App\Http\Controllers\API\Admin\InvigilatorController::class, 'verify']);
+});
+// routes/api.php
+Route::get('/attendance/logs', [App\Http\Controllers\API\AttendanceController::class, 'index']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
